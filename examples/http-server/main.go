@@ -26,12 +26,33 @@ func main() {
 		log.Println(http.ListenAndServe(":6060", nil))
 	}()
 
-	// enable SSL mode
+	// add SSL CA
 	gaio.SSLEnvInit()
-	gaio.SetGlobalSSLCtx(gaio.NewSSLCTX("./ca/cacert.pem", "./ca/privkey.pem"))
+	gaio.SetSSLWithPort("./ca/cacert.pem", "./ca/privkey.pem", "50006")
 
+	// SSL server1
+	var err error
 	HandleFunc("/", IndexHandler)
-	err := StartHttpServe("127.0.0.1:50006", 1, false)
+	go func() {
+		err = StartHttpServe("127.0.0.1:50006", 1, false)
+		if err != nil {
+			fmt.Println("faild to start server")
+		}
+	}()
+
+	//SSL server2
+	gaio.SetSSLWithPort("./ca/ca_ee.pem", "./ca/key_ee.pem", "50007")
+	HandleFunc("/", IndexHandler1)
+	go func() {
+		err = StartHttpServe("127.0.0.1:50007", 1, false)
+		if err != nil {
+			fmt.Println("faild to start server")
+		}
+	}()
+
+	// Common server
+	HandleFunc("/", IndexHandler2)
+	err = StartHttpServe("127.0.0.1:50008", 1, false)
 	if err != nil {
 		fmt.Println("faild to start server")
 	}
@@ -40,7 +61,7 @@ func main() {
 func IndexHandler(conInfo *ConInfo) {
 	req := &conInfo.Req
 	rsp := &conInfo.Rsp
-	if 0 == strings.Compare(req.Header.RequestURI, "/") ||  0 == strings.Compare(req.Header.RequestURI, "/index.html") {
+	if 0 == strings.Compare(req.Header.RequestURI, "/") || 0 == strings.Compare(req.Header.RequestURI, "/index.html") {
 		//content, _ := ioutil.ReadFile("/home/charles/www/index.html")
 		rsp.Body = append(rsp.Body, rspBody...)
 	} else {
@@ -48,6 +69,13 @@ func IndexHandler(conInfo *ConInfo) {
 	}
 }
 
+func IndexHandler1(conInfo *ConInfo) {
+	IndexHandler(conInfo)
+}
+
+func IndexHandler2(conInfo *ConInfo) {
+	IndexHandler(conInfo)
+}
 
 var rspBody = []byte(
 	"<!DOCTYPE html>\n" +
@@ -195,7 +223,6 @@ var (
 	}
 )
 
-
 type ConInfo struct {
 	rec    []byte //  接收缓存
 	in     []byte //  数据处理缓存
@@ -226,7 +253,6 @@ type Response struct {
 	Action      int //是否关闭连接
 }
 
-
 type HttpRequestHeader struct {
 	Method     string
 	RequestURI string
@@ -252,7 +278,6 @@ type WSRequestHeader struct {
 
 	payloadLength int64
 }
-
 
 type WSRequest struct {
 	header      WSRequestHeader

@@ -12,9 +12,11 @@ import (
 	"container/list"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -489,9 +491,9 @@ func (w *watcher) tryRead(fd int, pcb *aiocb) bool {
 	var er error
 	for {
 		// 先进行SSL处理
-		bSSL := ifSSLConn(desc)
-		if bSSL && desc.sslConnStatus != SSL_SHAKE_HAND_END {
-			iRst := SSLHandShake(fd, desc)
+		ctx := GetSSLCtx(desc)
+		if ctx != nil && desc.sslConnStatus != SSL_SHAKE_HAND_END {
+			iRst := SSLHandShake(fd, desc, ctx)
 			if iRst == -1 {
 				pcb.err = errors.New("SSLHandShake failed")
 				break
@@ -510,7 +512,7 @@ func (w *watcher) tryRead(fd int, pcb *aiocb) bool {
 		}
 
 		// return values are stored in pcb
-		if bSSL {
+		if desc.ssl_ != nil {
 			iSize := len(buf[pcb.size:])
 			cBuf := unsafe.Pointer(&buf[pcb.size])
 			var cErr C.int
@@ -592,7 +594,7 @@ func (w *watcher) tryWrite(fd int, pcb *aiocb) bool {
 			return false
 		}
 		for {
-			if ifSSLConn(desc) {
+			if desc.ssl_ != nil {
 				iSize := len(pcb.buffer[pcb.size:])
 				cBuf := unsafe.Pointer(&pcb.buffer[pcb.size])
 				var cErr C.int
@@ -902,11 +904,14 @@ func (w *watcher) handleEvents(pe pollerEvents) {
 	}
 }
 
-var gSSLCtx *C.SSL_CTX
+var sslCtxMap sync.Map
 
-func SetGlobalSSLCtx(ctx *C.SSL_CTX) {
-	gSSLCtx = ctx
-}
+const (
+	SSL_CONN_INIT = iota
+	SSL_SHAKE_HAND_BEGIN
+	SSL_SHAKE_HAND_END
+	SSL_PLAIN_TEXT
+)
 
 func SSLEnvInit() {
 	C.C_SSLEnvInit()
@@ -924,27 +929,33 @@ func NewSSLCTX(caPath string, keyPath string) *C.SSL_CTX {
 	return C.C_NewSSLCTX(cCAPath, cKeyPath)
 }
 
-const (
-	SSL_CONN_INIT = iota
-	SSL_SHAKE_HAND_BEGIN
-	SSL_SHAKE_HAND_END
-	SSL_PLAIN_TEXT
-)
-
 // 0 成功 但是不一定完全握手结束，-1 失败 需要关闭连接
-func SSLHandShake(fd int, desc *fdDesc) C.int {
-	iRst := C.C_SSLHandShake(C.int(fd), &desc.sslConnStatus, gSSLCtx, &desc.ssl_)
+func SSLHandShake(fd int, desc *fdDesc, ctx *C.SSL_CTX) C.int {
+	iRst := C.C_SSLHandShake(C.int(fd), &desc.sslConnStatus, ctx, &desc.ssl_)
 	return iRst
 }
 
-func ifSSLConn(desc *fdDesc) bool {
-	if gSSLCtx != nil {
-		return true
+func GetSSLCtx(desc *fdDesc) *C.SSL_CTX {
+	svrAddr := (*net.TCPConn)(unsafe.Pointer(desc.ptr)).LocalAddr().String()
+	log.Println(svrAddr)
+	index := strings.Index(svrAddr, ":")
+	if index < 0 {
+		return nil
 	}
 
-	return false
+	port := svrAddr[index+1:]
+	if val, ok := sslCtxMap.Load(port); ok {
+		return val.(*C.SSL_CTX)
+	}
+	return nil
 }
 
-func CheckSSLCTXADDR(gSSLCtx *C.SSL_CTX) {
-	C.C_CheckSSLCTXAddr(gSSLCtx)
+func SetSSLWithPort(caPath string, keyPath string, port string) bool {
+	sslCtx := NewSSLCTX(caPath, keyPath)
+	if sslCtx == nil {
+		log.Println("NewSSLCTX failed")
+		return false
+	}
+	sslCtxMap.Store(port, sslCtx)
+	return true
 }
