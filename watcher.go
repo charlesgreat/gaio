@@ -22,7 +22,6 @@ import (
 	"unsafe"
 )
 
-
 /*
 //#cgo darwin CFLAGS: -DCGO_OS_DARWIN=1
 //#cgo linux CFLAGS: -DCGO_OS_LINUX=1
@@ -195,7 +194,6 @@ int C_SSL_WRITE(int fd, void * buf, int bytes, SSL * ssl, int* errNo)
 */
 import "C"
 
-
 var (
 	aiocbPool sync.Pool
 )
@@ -208,12 +206,12 @@ func init() {
 
 // fdDesc contains all data structures associated to fd
 type fdDesc struct {
-	readers list.List // all read/write requests
-	writers list.List
-	ptr     uintptr // pointer to net.Conn
-	r_armed bool
-	w_armed bool
-	ssl_    *C.SSL
+	readers       list.List // all read/write requests
+	writers       list.List
+	ptr           uintptr // pointer to net.Conn
+	r_armed       bool
+	w_armed       bool
+	ssl_          *C.SSL
 	sslConnStatus C.int
 }
 
@@ -492,7 +490,7 @@ func (w *watcher) tryRead(fd int, pcb *aiocb) bool {
 	for {
 		// 先进行SSL处理
 		bSSL := ifSSLConn(desc)
-		if  bSSL && desc.sslConnStatus != SSL_SHAKE_HAND_END {
+		if bSSL && desc.sslConnStatus != SSL_SHAKE_HAND_END {
 			iRst := SSLHandShake(fd, desc)
 			if iRst == -1 {
 				pcb.err = errors.New("SSLHandShake failed")
@@ -503,7 +501,7 @@ func (w *watcher) tryRead(fd int, pcb *aiocb) bool {
 				return false
 			}
 
-			if desc.sslConnStatus == SSL_PLAIN_TEXT {  //先按错误处理 后面考虑重定向
+			if desc.sslConnStatus == SSL_PLAIN_TEXT { //先按错误处理 后面考虑重定向
 				pcb.err = errors.New("SSL server but common client")
 				break
 			}
@@ -561,7 +559,6 @@ func (w *watcher) tryRead(fd int, pcb *aiocb) bool {
 
 			break
 		}
-
 
 	}
 
@@ -650,16 +647,15 @@ func (w *watcher) releaseConn(ident int) {
 		// delete from heap
 		for e := desc.readers.Front(); e != nil; e = e.Next() {
 			tcb := e.Value.(*aiocb)
-			if !tcb.deadline.IsZero() {
-				heap.Remove(&w.timeouts, tcb.idx)
-			}
+			// notify caller
+			tcb.err = io.ErrClosedPipe
+			w.deliver(tcb)
 		}
 
 		for e := desc.writers.Front(); e != nil; e = e.Next() {
 			tcb := e.Value.(*aiocb)
-			if !tcb.deadline.IsZero() {
-				heap.Remove(&w.timeouts, tcb.idx)
-			}
+			tcb.err = io.ErrClosedPipe
+			w.deliver(tcb)
 		}
 
 		if desc.ssl_ != nil {
@@ -906,7 +902,6 @@ func (w *watcher) handleEvents(pe pollerEvents) {
 	}
 }
 
-
 var gSSLCtx *C.SSL_CTX
 
 func SetGlobalSSLCtx(ctx *C.SSL_CTX) {
@@ -930,7 +925,7 @@ func NewSSLCTX(caPath string, keyPath string) *C.SSL_CTX {
 }
 
 const (
-	SSL_CONN_INIT    = iota
+	SSL_CONN_INIT = iota
 	SSL_SHAKE_HAND_BEGIN
 	SSL_SHAKE_HAND_END
 	SSL_PLAIN_TEXT
@@ -943,7 +938,7 @@ func SSLHandShake(fd int, desc *fdDesc) C.int {
 }
 
 func ifSSLConn(desc *fdDesc) bool {
-	if gSSLCtx != nil  {
+	if gSSLCtx != nil {
 		return true
 	}
 
