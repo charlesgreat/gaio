@@ -81,7 +81,7 @@ SSL_CTX* C_NewSSLCTX(char* caPath, char* keyPath) {
 	/// 对于非阻塞模式， SSL_write 默认直到发送完才会返回成功，未全部发送完时返回errno 11， SSL error 3
 	/// 设置SSL_CTX_set_mode（3）后，每次调用SSL_write都会返回发送了多少
 	SSL_CTX_set_mode(sslCTX, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-    printf("SSL_CTX_new addr %p\n", sslCTX);
+    //printf("SSL_CTX_new addr %p\n", sslCTX);
     return sslCTX;
 }
 

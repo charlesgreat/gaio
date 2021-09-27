@@ -28,7 +28,12 @@ func main() {
 
 	// add SSL CA
 	gaio.SSLEnvInit()
-	gaio.SetSSLWithPort("./ca/cacert.pem", "./ca/privkey.pem", "50006")
+	if !gaio.SetSSLWithPort("./ca/cacert.pem", "./ca/privkey.pem", "50006") {
+		return
+	}
+	if !gaio.SetSSLWithPort("./ca/ca_ee.pem", "./ca/key_ee.pem", "50007") {
+		return
+	}
 
 	// SSL server1
 	var err error
@@ -41,7 +46,6 @@ func main() {
 	}()
 
 	//SSL server2
-	gaio.SetSSLWithPort("./ca/ca_ee.pem", "./ca/key_ee.pem", "50007")
 	HandleFunc("/", IndexHandler1)
 	go func() {
 		err = StartHttpServe("127.0.0.1:50007", 1, false)
